@@ -1,0 +1,111 @@
+<pre>
+  BIP: ???
+  Title: Peer-to-Peer Communication Encryption
+  Author: Jonas Schnelli <dev@jonasschnelli.ch>
+  Status: Draft
+  Type: Standards Track
+  Created: 2016-03-23
+</pre>
+
+== Abstract ==
+
+This BIP describes an alternative way how a peer can encrypt their communication between a selective subset of remote peers.
+
+== Motivation ==
+
+The current p2p communication is unencrypted and can be analyzed and modified by many network authority (ISP, WiFi providers, router-firmware, etc.). Mostly this is negligible because of the nature of bitcoins trust model, however for SPV nodes this can have significant privacy impacts [1] and could reduce the censorship-restitance of a peer.
+
+Encrypting the communication will reduce the capabilities of analyzing the p2p communication of a specific peer. Today it's trivial for a network provider or any other men-in-the-middle to identify an bitcoin user and its controlled addresses/keys (and link with his google profile, etc.). Just created and broadcastet transactions will reveal the amount and the payee to the network provider.
+
+This BIP also describes a way how data manipulation (blocking commands by a intercepting TCP/IP node) would be identifiable by the communicating peers.
+
+Analyzing the type of p2p communication would still be possible because of the characteristics (size, sending-interval, etc.) of the encrypted messages.
+
+Encrypting traffic between peers is already possible with VPN, tor, stunnel, curveCP or any other encryption mechanism on a deeper OSI level, however, most mechanism are not practical for SPV or other DHCP/NAT environment and will require significant knowhow in how to setup a secure channel.
+
+== Specification ==
+
+
+=== Authentication is a pre-requirement ===
+
+The authentication message wrapper (<code>auth</code> messages described in BIP-???? [2]) is a pre-requirement for this BIP.
+
+Encrypted communication must only be made available to authenticated peers.
+
+
+=== Key-Exchanges with ECDH ===
+
+To request encrypted communication, the requesting peer must send an <code>auth(encinit)</code> message (encinit message wrapped in an auth message) to the responding peer and requests a ECDH pubkey exchange.
+
+=== The <code>encinit</code> message type ===
+To request encrypted communication, the requesting peer generates a EC session-keypair and sends an <code>auth(encinit)</code> message ("encinit" message wrapped in a "auth" message) to the responding peer.
+
+The <code>encinit</code> command (as any other auth wrapped command) must be ignored if the authentication was not successful.
+
+{|class="wikitable"
+! Field Size !! Description !! Data type !! Comments
+|-
+| 33bytes || session-pubkey || comp.-pubkey || The session pubkey of the requesting peer
+|-
+| 1bytes || symmetric key cipher  || int8 || symmetric cipher to use
+|-
+| 4bytes || timeout  || int32 || time-interval in seconds for the session timeout
+|}
+
+Possible symmetric key ciphers
+{|class="wikitable"
+! Number !! symmetric key ciphers
+|-
+| 0 || AES256CBC
+|}
+
+The responding peer also generates a EC session-keypair and responses with a identical <code>encinit</code> message, containing the session-pubkey of the responding peer.
+
+The requesting <code>encinit</code> message must use 0 for the session timeout time-interval.
+
+The responding peer will set a session timeout time-interval. The default must be 1'800 seconds.
+
+The responding peer will reject <code>enc</code> messages after the timeout has been expired.
+
+The requesting node must re-initiate encryption by requesting another encryption session by sending an  <code>encinit</code> message after the timeout has been reached.
+
+The shared secret for the symmetric key cipher must be calculated by using ECDH (own privkey MUL remote pub key).
+Private keys will never be transmitted. The shared secret can only be calculated if an attacker knows at least one private key and the remote peers public key.
+
+After a successful <code>encinit</code> interaction, nodes can send encrypted messages by wrapping messages into the <code>enc</code> message wrapper.
+
+=== <code>enc</code> p2p message (wrapper) ===
+{|class="wikitable"
+! Field Size !! Description !! Data type !! Comments
+|-
+| 32byte || context hash || sha256 || Hash of the complete session communication
+|-
+| 16byte || IV  || ? || initialization vector for the symmetric key cipher (only AES256 for now)
+|-
+| varint || wrapped-msg-size || ? || wrapped message size
+|-
+| data || encrypted wrapped-msg || ? || symmetric encrypted wrapped message including message header
+|}
+
+To ensure that no message was dropped or blocked, the complete communication must be hashed (sha256). Both peers keep the SHA256 context of the encryption session. The complete <code>enc</code> message (leaving out the hash itself) must be added to the hash-context by both parties. Before sending a <code>enc</code> command, the sha256 context will be copied and finalized.
+
+Before decrypting and processing the wrapped message, the local hash must be compared against the remote hash and the connection must be terminated if the hashes are not equal.
+
+The <code>encinit</code> must be the fist messages added to the context. First the requesting <code>encinit</code> message, then the responding <code>encinit</code> message.
+
+The timeout must be resetted to the value defined by the responding <code>encinit</code> message after a successful <code>enc</code> message.
+
+== Compatibility ==
+
+This proposal is backward compatible. Non supporting peers will ignore the <code>enc*</code> messages.
+
+== Reference implementation ==
+
+== References ==
+
+[1] http://e-collection.library.ethz.ch/eserv/eth:48205/eth-48205-01.pdf
+
+[2] [[bip-XXXX.mediawiki|BIP XXX: p2p communication encryption]]
+
+== Copyright ==
+This work is placed in the public domain.
