@@ -1,0 +1,113 @@
+<pre>
+  BIP: ???
+  Title: Peer Authentication
+  Author: Jonas Schnelli <dev@jonasschnelli.ch>
+  Status: Draft
+  Type: Standards Track
+  Created: 2016-03-23
+</pre>
+
+== Abstract ==
+
+This BIP describes a way that peers can authenticate to other peers to guarantee ownership and/or allowing to access additional or limited services.
+
+== Motivation ==
+
+We assume peer operators want to limit the access of different services to a selective subset of peers. Also we assume peers want to connect to specific peers to broadcast or filter transactions (or similar action that reveals sensitive information’s) and therefore they want to authenticate the remote peer and make sure that they have not connected to a MITM. 
+
+Benefits with peer authentication:
+* Nodes could allow resource hungry transaction filtering only to specific nodes
+* Nodes could allow access to sensitive information that can lead to node fingerprinting (fee estimation)
+* Nodes could be sure they do not connect to a MITM
+* Nodes could allow custom message types (private extensions) to authenticated peers
+
+A simple authentication scheme based on elliptic cryptography will allow peers to identify each other and selective allow access to restricted services or reject the connection if the identity could not be verified.
+
+== Specification ==
+
+The authentication scheme proposed in this BIP uses ECDSA, '''secrets will never be transmitted'''.
+
+'''Authentication initialization must only happen if encrypted channels has been established (according to BIP-???? [1]).'''
+
+The '''encryption-session-ID''' is available once channels are encrypted (according to BIP-???? [1]).
+
+Authentication can be verified by verifying the signature of the encryption-session-ID with a provided "identity-pubkey" (standard ec pubkey).
+
+The authentication state must be kept until the encryption/connection terminates.
+
+=== Known-peers and authorized-peers database ===
+Each peer that supports p2p authentication must provide two user editable databases
+
+# '''known-peers''' contain known identity-pubkeys together with a network identifier (IP & port), similar to the "known-host" file supported by openssh.
+# '''authorized-peers''' contains identity-pubkeys, together with allowed services (example: encryption,filtering,fee-estimation).
+
+=== <code>auth</code> message ===
+A peer can send an authenticate request by sending an <code>auth</code>-message to the remote peer.
+
+{|class="wikitable"
+! Field Size !! Description !! Data type !! Comments
+|-
+| 33bytes || identity-pubkey || comp.-pubkey || The identity pubkey of the requesting peer
+|-
+| 64bytes || signature || normalized comp.-signature || A signature of the encryption-session-ID from the requesting-to-responing communication direction.
+|}
+
+Replay attacks are not possible because the <code>auth</code> message must be sent only if communication encryption according to BIP-???? [1]) has been established. Peers must ignore unencrypted <code>auth</code> messages.
+
+The requesting <code>auth</code> message must be responded with an identical <code>auth</code> message. The response-auth message must contain the identity-pubkey from the responding-peer as well as the encryption-session-ID from the opposit communication direction.
+
+The responding peer can reject the authentication request if the peer was not found in the “authorized-peers” database or if the signature was invalid.
+
+Rejecting the <code>auth</code> request will not reveal the responding peers identity that could lead to fingerprinting the node, however this BIP does not cover protection against fingerprinting the requesting node from the perspective of the responding node.
+
+Responding peers must ignore the requesting peer after a unsuccessfully authentication initialization to avoid resource attacks (banning would lead to fingerprinting of peers that support authentication).
+
+The responding <code>auth</code> message allows the requesting peer to verify the integrity of the remote peer and would identify a men-in-the-middle attack. The requesting peer must store the responding peer's identity-pubkey from a previous accepted authentication or from a pre-sharing of the identity-pubkeys over a different channel (PGP, etc.). '''Only the owner of the corresponding private-key can generate a valid signature of the session-ID that must be included in the <code>auth</code> message'''. A non-matching identity-pubkey must be reported to the user and must lead to manual action (re-setting the identity-pubkey).
+
+The peers should display the identity-pubkey as a identity-address to the users, which is a base58-check encoded ripemd160(sha256) hash. The purpose of this is for better visual comparison (logs, accept-dialogs).
+The base58check identity byte is <code>0x0F</code> followed by an identity-address version number (=<code>0xFF01</code>).
+
+An identity address would look like <code>TfG4ScDgysrSpodWD4Re5UtXmcLbY5CiUHA</code> and can be interpreted as a remote nodes fingerprint.
+
+== Compatibility ==
+
+This proposal is backward compatible. Non-supporting peers will ignore the <code>auth</code> message.
+
+== Example of a successful auth interaction ==
+
+Before authentication (once during peer setup or upgrade)
+# Requesting peer and responding peer create each a identity-keypair (standard ec priv/pubkey)
+# Optional: requesting and responding peer share the identity-pubkey over a different channel
+# Optional: responding peer stores requesting peer's identity-pubkey in its authorized-peers database (A)
+# Optional: requesting peer stores responding peer's identity-pubkey in its known-peers database (B)
+
+Encryption
+# Encrypted channels must be established (according to BIP-???? [1])
+
+Authentication
+# Requesting peer sends an <code>auth</code> message
+  auth:
+    [33 bytes identity-pubkey (C)]
+    [64 bytes normalized compact signature (E)] (sig of encryption-session-ID with privkey of C)
+
+# Responding peer does a lookup of the provided identity pubkey (C) in the authorized-peers database (A)
+# Responding peer hashes (C) and verifies signature (E) with identity-pubkey (C)
+# Responding peer grants authentication state (requesting peer is now authenticated)
+# Responding peer replies with a corresponding <code>auth</code>  message
+    [33 bytes responding-peer-identity-pubkey (F)]
+    [64 bytes normalized compact signature (H)] (sig of encryption-session-ID with privkey of F)
+
+# Requesting peer does a lookup of (F) in known-peers database (B)
+# Requesting peer hashes (F) and verifies signature of the encryption-session-ID (H) with identity-pubkey (F)
+# Requesting peer flags responding peer as authenticated/trusted
+
+
+== Reference implementation ==
+
+== References ==
+
+* [1] [[bip-XXXX.mediawiki|BIP XXX: Peer-to-Peer Communication Encryption]]
+
+== Copyright ==
+This work is placed in the public domain.
+
