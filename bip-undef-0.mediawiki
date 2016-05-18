@@ -31,7 +31,9 @@ The authentication scheme proposed in this BIP uses ECDSA, '''secrets will never
 
 The '''encryption-session-ID''' is available once channels are encrypted (according to BIP-???? [1]).
 
-Authentication can be verified by verifying the signature of the encryption-session-ID with a provided "identity-pubkey" (standard ec pubkey).
+Authentication can be verified by verifying the signature of a hash of the encryption-session-ID plus the "identity-pubkey" (standard ec pubkey).
+
+The indentity-pubkeys must be pre-shared over a different channel (PGP, etc.). This BIP does not cover a "trust on first use" concept.
 
 The authentication state must be kept until the encryption/connection terminates.
 
@@ -47,18 +49,25 @@ A peer can send an authenticate request by sending an <code>auth</code>-message 
 {|class="wikitable"
 ! Field Size !! Description !! Data type !! Comments
 |-
-| 33bytes || identity-pubkey || comp.-pubkey || The identity pubkey of the requesting peer
+| 32bytes || hash || challange || hash(encryption-session-ID || identity-pubkey)
 |-
 | 64bytes || signature || normalized comp.-signature || A signature of the encryption-session-ID from the requesting-to-responing communication direction.
 |}
 
-Replay attacks are not possible because the <code>auth</code> message must be sent only if communication encryption according to BIP-???? [1]) has been established. Peers must ignore unencrypted <code>auth</code> messages.
+=== <code>authack</code> message ===
+A peer can send an authenticate request by sending an <code>auth</code>-message to the remote peer.
 
-The requesting <code>auth</code> message must be responded with an identical <code>auth</code> message. The response-auth message must contain the identity-pubkey from the responding-peer as well as the encryption-session-ID from the opposit communication direction.
+{|class="wikitable"
+! Field Size !! Description !! Data type !! Comments
+|-
+| 64bytes || signature || normalized comp.-signature || sig(requesting-peers auth-hash || encryption-session-ID || identity-pubkey)
+|}
+
+The requesting <code>auth</code> message must be responded with an <code>authack</code> message. The response-authack message must contain a signature made with the responding nodes idenitiy-key. The signature-hash must be a hash of the requesting-peers auth-challange-hash plus the responding-peers encryption-session-id plus the responding peers idenitity-pubkey.
 
 The responding peer can reject the authentication request if the peer was not found in the “authorized-peers” database or if the signature was invalid.
 
-Rejecting the <code>auth</code> request will not reveal the responding peers identity that could lead to fingerprinting the node, however this BIP does not cover protection against fingerprinting the requesting node from the perspective of the responding node.
+Rejecting the <code>auth</code> request will not reveal the responding peers identity.
 
 Responding peers must ignore the requesting peer after a unsuccessfully authentication initialization to avoid resource attacks (banning would lead to fingerprinting of peers that support authentication).
 
